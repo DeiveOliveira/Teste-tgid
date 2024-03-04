@@ -2,16 +2,13 @@ package com.example.Testetgid.service.impl;
 
 import com.example.Testetgid.DTO.TransacaoResponseDTO;
 import com.example.Testetgid.service.CallbackService;
+import jakarta.mail.internet.MimeMessage;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 @Service
 public class CallbackServiceImpl implements CallbackService {
-
-
-    public void enviarCallbackParaEmpresa(TransacaoResponseDTO responseDTO) {
-        enviarCallback(responseDTO);
-    }
 
     public void enviarNotificacaoParaCliente(TransacaoResponseDTO responseDTO) {
         // Restante do código de envio de e-mail para o cliente
