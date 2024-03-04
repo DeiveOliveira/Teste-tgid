@@ -34,6 +34,9 @@ public class DepositoServiceImpl implements TransacaoService {
     @Autowired
     private TaxaRepository taxaRepository;
 
+    @Autowired
+    private CallbackServiceImpl callbackService;
+
     @Override
     public TransacaoResponseDTO fazTransacao(TransacaoRequestDTO transacaoRequestDTO) {
         Cliente cliente = clienteRespository.getReferenceById(transacaoRequestDTO.getClientId());
@@ -63,6 +66,9 @@ public class DepositoServiceImpl implements TransacaoService {
                             .build();
 
                     transacaoRepository.save(new Transacao(responseDTO, cliente, empresa));
+
+                    callbackService.enviarCallbackParaEmpresa(responseDTO);
+
 
                     return responseDTO;
                 })

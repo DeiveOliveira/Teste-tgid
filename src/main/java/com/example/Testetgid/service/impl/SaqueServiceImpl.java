@@ -14,8 +14,8 @@ import com.example.Testetgid.repository.TaxaRepository;
 import com.example.Testetgid.repository.TransacaoRepository;
 import com.example.Testetgid.service.TransacaoService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -35,55 +35,51 @@ public class SaqueServiceImpl implements TransacaoService {
     @Autowired
     private TaxaRepository taxaRepository;
 
+    @Autowired
+    private CallbackServiceImpl callbackService;
+
     @Override
     public TransacaoResponseDTO fazTransacao(TransacaoRequestDTO transacaoRequestDTO) {
         Cliente cliente = clienteRespository.getReferenceById(transacaoRequestDTO.getClientId());
 
-        if (transacaoRequestDTO.getValor() > cliente.getSaldo()) {
-            return TransacaoResponseDTO.builder()
-                    .tipoTransacao(transacaoRequestDTO.getTipoTransacao())
-                    .valorTransacao(transacaoRequestDTO.getValor())
-                    .dataHora(LocalDateTime.now())
-                    .status(StatusTransacao.CANCELADO)
-                    .descricao("Cliente não possui saldo para saque!")
-                    .build();
-        }
-
-        Double saldoCliente = cliente.getSaldo() - transacaoRequestDTO.getValor();
+        Double saldoCliente = cliente.getSaldo() + transacaoRequestDTO.getValor();
         cliente.setSaldo(saldoCliente);
         clienteRespository.save(cliente);
 
         Empresa empresa = empresaRespository.getReferenceById(transacaoRequestDTO.getEmpresaId());
 
-        List<Taxa> porEmpresa = taxaRepository.findByEmpresa(empresa);
+        List<Taxa> taxas = taxaRepository.findByEmpresa(empresa);
 
-        TransacaoResponseDTO transacaoResponseDTO = porEmpresa.stream()
-                .filter(taxa -> taxa.getTipoTaxa().equals(TipoTaxa.SAQUE))
+        TransacaoResponseDTO transacaoResponseDTO = taxas.stream()
+                .filter(taxa -> taxa.getTipoTaxa().equals(TipoTaxa.DEPOSITO))
                 .findFirst()
-                .map(taxa -> {
-                    Double valorTotalSaque = transacaoRequestDTO.getValor() + taxa.getValorTaxa();
+                .map(taxa -> processarDeposito(transacaoRequestDTO, cliente, empresa, taxa))
+                .orElseThrow(() -> new RuntimeException("Taxa de depósito não encontrada para a empresa"));
 
-                    if (empresa.getSaldo() >= valorTotalSaque) {
-                        empresa.setSaldo(empresa.getSaldo() - valorTotalSaque);
 
-                        TransacaoResponseDTO responseDTO = TransacaoResponseDTO.builder()
-                                .tipoTransacao(transacaoRequestDTO.getTipoTransacao())
-                                .valorTransacao(transacaoRequestDTO.getValor())
-                                .dataHora(LocalDateTime.now())
-                                .status(StatusTransacao.CONCLUIDO)
-                                .descricao("Saque concluído com sucesso")
-                                .valorTaxa(taxa.getValorTaxa())
-                                .build();
+        callbackService.enviarCallbackParaEmpresa(transacaoResponseDTO);
 
-                        transacaoRepository.save(new Transacao(responseDTO, cliente, empresa));
-
-                        return responseDTO;
-                    } else {
-                        throw new RuntimeException("Saldo insuficiente para realizar o saque");
-                    }
-                })
-                .orElseThrow(() -> new RuntimeException("Taxa de saque não encontrada para a empresa"));
 
         return transacaoResponseDTO;
     }
+
+    private TransacaoResponseDTO processarDeposito(TransacaoRequestDTO transacaoRequestDTO, Cliente cliente, Empresa empresa, Taxa taxa) {
+        Double valorDepositado = transacaoRequestDTO.getValor() - taxa.getValorTaxa();
+        empresa.setSaldo(empresa.getSaldo() + valorDepositado);
+
+        TransacaoResponseDTO responseDTO = TransacaoResponseDTO.builder()
+                .tipoTransacao(transacaoRequestDTO.getTipoTransacao())
+                .valorTransacao(transacaoRequestDTO.getValor())
+                .dataHora(LocalDateTime.now())
+                .status(StatusTransacao.CONCLUIDO)
+                .descricao("Depósito concluído com sucesso")
+                .valorTaxa(taxa.getValorTaxa())
+                .build();
+
+        transacaoRepository.save(new Transacao(responseDTO, cliente, empresa));
+
+        return responseDTO;
+    }
+
+
 }
